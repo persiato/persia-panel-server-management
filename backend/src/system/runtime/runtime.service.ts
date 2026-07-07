@@ -47,6 +47,15 @@ export class RuntimeService {
     }
   }
 
+  private async groupExists(name: string): Promise<boolean> {
+    try {
+      await execFileAsync('getent', ['group', name]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // PHP-FPM pools and app systemd units run as the domain owner's Linux
   // account (`owner.username`), but that account is just a row in our own
   // User table — nothing else in the codebase ever provisions a matching OS
@@ -62,14 +71,25 @@ export class RuntimeService {
     } catch {
       // fall through and create it
     }
-    await execFileAsync('useradd', [
+    // useradd's default behavior is to create a new group with the same
+    // name as the user for its primary group. Some cloud VM images already
+    // ship a group with a common name (e.g. "admin") for unrelated purposes
+    // (cloud-init admin tooling, etc.) — in that case plain `useradd admin`
+    // fails with "group admin exists" (exit 9). If that group already
+    // exists, reuse it as the primary group via `-g` instead of trying to
+    // create a new one.
+    const useraddArgs = [
       '--home-dir',
       homeDir,
       '--no-create-home',
       '--shell',
       '/usr/sbin/nologin',
-      username,
-    ]);
+    ];
+    if (await this.groupExists(username)) {
+      useraddArgs.push('-g', username);
+    }
+    useraddArgs.push(username);
+    await execFileAsync('useradd', useraddArgs);
   }
 
   async createOrUpdatePhpPool(domain: Domain, owner: User): Promise<void> {

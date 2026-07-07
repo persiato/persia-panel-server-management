@@ -249,16 +249,22 @@ main() {
     if [[ "${SEED_STATUS:-}" == "created" ]]; then
       log_ok "First login — username: ${admin_user:-admin}  password: ${admin_pass}"
       log_warn "This password is only shown once here and stored in backend/.env — save it now."
-    else
-      # SEED_STATUS is "skipped" (a user with this username/email already
-      # existed in the database, e.g. from an earlier install attempt on
-      # this same server) or "failed". Either way, the password above was
-      # freshly generated into .env but was NOT applied to any account —
-      # printing it as if it were a working login is exactly what caused
-      # repeated "Invalid credentials" reports after reinstalls.
+    elif [[ "${SEED_STATUS:-}" == "skipped" ]]; then
+      # A user with this username/email already existed in the database
+      # (e.g. from an earlier install attempt on this same server). The
+      # password above was freshly generated into .env but was NOT applied
+      # to that account — printing it as if it were a working login is
+      # exactly what caused repeated "Invalid credentials" reports after
+      # reinstalls.
       log_warn "An account for \"${admin_user:-admin}\" already existed in the database — its password was NOT changed (the value now in backend/.env's ADMIN_PASSWORD does not apply to it)."
       log_warn "Log in with whatever password that account already had, or reset it now with:"
       log_warn "  cd ${REPO_DIR}/backend && ADMIN_USERNAME=${admin_user:-admin} NEW_PASSWORD='choose-a-new-password' npx ts-node prisma/reset-admin-password.ts"
+    else
+      # SEED_STATUS is "failed" — the seed step crashed for some other
+      # reason (see the seed output printed above for the real error) and no
+      # admin account may exist at all yet. Don't claim one already exists.
+      log_warn "The admin account was NOT created — the seed step failed (see the error above)."
+      log_warn "Fix the underlying issue, then run: cd ${REPO_DIR}/backend && set -a && source .env && set +a && npx ts-node prisma/seed.ts"
     fi
   fi
 }
