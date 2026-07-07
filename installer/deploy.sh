@@ -100,8 +100,19 @@ build_backend() {
   (cd "${REPO_DIR}/backend" && npx prisma migrate deploy)
 
   log_info "Seeding admin account (skipped if one already exists)"
-  (cd "${REPO_DIR}/backend" && set -a && source .env && set +a && npx ts-node prisma/seed.ts) \
-    || log_warn "Admin seed step failed — check backend/.env's ADMIN_* values and run manually: cd backend && npx ts-node prisma/seed.ts"
+  local seed_output
+  if seed_output="$(cd "${REPO_DIR}/backend" && set -a && source .env && set +a && npx ts-node prisma/seed.ts 2>&1)"; then
+    echo "${seed_output}"
+    if grep -q '^PP_SEED_STATUS=SKIPPED$' <<<"${seed_output}"; then
+      SEED_STATUS="skipped"
+    else
+      SEED_STATUS="created"
+    fi
+  else
+    echo "${seed_output}"
+    log_warn "Admin seed step failed — check backend/.env's ADMIN_* values and run manually: cd backend && npx ts-node prisma/seed.ts"
+    SEED_STATUS="failed"
+  fi
 }
 
 build_frontend() {
@@ -235,8 +246,20 @@ main() {
     local admin_user admin_pass
     admin_user="$(grep '^ADMIN_USERNAME=' "${REPO_DIR}/backend/.env" | cut -d= -f2- || echo admin)"
     admin_pass="$(grep '^ADMIN_PASSWORD=' "${REPO_DIR}/backend/.env" | cut -d= -f2-)"
-    log_ok "First login — username: ${admin_user:-admin}  password: ${admin_pass}"
-    log_warn "This password is only shown once here and stored in backend/.env — save it now."
+    if [[ "${SEED_STATUS:-}" == "created" ]]; then
+      log_ok "First login — username: ${admin_user:-admin}  password: ${admin_pass}"
+      log_warn "This password is only shown once here and stored in backend/.env — save it now."
+    else
+      # SEED_STATUS is "skipped" (a user with this username/email already
+      # existed in the database, e.g. from an earlier install attempt on
+      # this same server) or "failed". Either way, the password above was
+      # freshly generated into .env but was NOT applied to any account —
+      # printing it as if it were a working login is exactly what caused
+      # repeated "Invalid credentials" reports after reinstalls.
+      log_warn "An account for \"${admin_user:-admin}\" already existed in the database — its password was NOT changed (the value now in backend/.env's ADMIN_PASSWORD does not apply to it)."
+      log_warn "Log in with whatever password that account already had, or reset it now with:"
+      log_warn "  cd ${REPO_DIR}/backend && ADMIN_USERNAME=${admin_user:-admin} NEW_PASSWORD='choose-a-new-password' npx ts-node prisma/reset-admin-password.ts"
+    fi
   fi
 }
 

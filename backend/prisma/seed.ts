@@ -43,7 +43,17 @@ async function main() {
 
   const existing = await prisma.user.findFirst({ where: { OR: [{ email }, { username }] } });
   if (existing) {
+    // Deliberately does NOT touch passwordHash here: this seed step also runs
+    // on every re-deploy (installer/deploy.sh calls it unconditionally), and
+    // an admin may have already changed their password since the last
+    // install. Silently resetting it on every redeploy would be worse than
+    // this skip. The PP_SEED_STATUS marker lets deploy.sh detect this case
+    // and avoid printing a "first login" password that won't actually work
+    // (this exact confusion — a freshly generated ADMIN_PASSWORD in .env
+    // that doesn't match the real, already-existing password hash — is what
+    // caused repeated "Invalid credentials" reports after reinstalls).
     console.log('Admin user already exists, skipping.');
+    console.log('PP_SEED_STATUS=SKIPPED');
     return;
   }
 
@@ -52,6 +62,7 @@ async function main() {
     data: { email, username, passwordHash, role: 'ADMIN', diskQuotaMb: 0 },
   });
   console.log(`Admin user "${username}" created.`);
+  console.log('PP_SEED_STATUS=CREATED');
 }
 
 main()
