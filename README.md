@@ -1,69 +1,92 @@
-# Persia Panel
+# پرشیا پنل (Persia Panel)
 
-A self-hosted, cPanel/WHM-style server control panel for Ubuntu 24.04 —
-domains & websites, file manager, databases, cron jobs, one-click app
-installer, email (Postfix + Dovecot), DNS (BIND9), SSL (ACME), backups,
-security/firewall, SSH-tunnel fallback connectivity, and an external
-API-key layer so third-party tools (e.g. a custom site builder) can manage
-the panel programmatically with the same privileges as a logged-in user.
+پنل مدیریت سرور خودمیزبان (self-hosted)، مشابه cPanel/WHM، برای Ubuntu
+24.04 — مدیریت دامنه‌ها و وب‌سایت‌ها، فایل منیجر، دیتابیس‌ها، کرون جاب‌ها،
+نصب یک‌کلیکی اپ‌ها، ایمیل (Postfix + Dovecot)، DNS (BIND9)، SSL خودکار
+(ACME)، بک‌آپ، امنیت و فایروال، اتصال جایگزین از طریق تونل SSH، و یک لایه
+کلید API برای اتصال ابزارهای بیرونی (مثلاً یک سایت‌ساز اختصاصی) با همان
+سطح دسترسی یک کاربر واردشده.
 
-The installer is built for servers with unreliable/sanctioned connectivity
-(e.g. Iranian IPs): every install step retries with mirror fallbacks and
-degrades gracefully instead of aborting the whole install.
+نصاب این پروژه مخصوص سرورهایی طراحی شده که اتصال شبکه‌شان پایدار/بدون
+محدودیت نیست (مثلاً سرورهای با IP ایران): هر مرحله نصب با retry و مسیر
+جایگزین (mirror fallback) کار می‌کند و در صورت شکست یک بخش، کل نصب متوقف
+نمی‌شود.
 
-## Repository layout
+## ویژگی‌ها
+
+- **دامنه‌ها و وب‌سایت‌ها** — نصب و پیکربندی خودکار nginx + PHP-FPM (چند
+  نسخه هم‌زمان) برای هر دامنه
+- **فایل منیجر** تحت وب
+- **دیتابیس‌ها** — MySQL/MariaDB و PostgreSQL
+- **کرون جاب‌ها**
+- **نصب یک‌کلیکی** (WordPress، phpMyAdmin و...)
+- **ایمیل** — صندوق‌های ایمیل مجازی روی Postfix + Dovecot
+- **DNS** — مدیریت کامل رکوردهای BIND9 (A/AAAA/CNAME/MX/TXT/NS/SRV)
+- **SSL** — صدور و تمدید خودکار گواهی با ACME
+- **بک‌آپ** و **امنیت/فایروال** (fail2ban، ufw)
+- **اتصال جایگزین (SSH tunnel)** برای زمانی که اتصال مستقیم مسدود است
+- **کلیدهای API** — دسترسی کامل برنامه‌نویسی‌شده به تمام قابلیت‌های پنل
+  برای اتصال یک سیستم بیرونی (مثلاً سایت‌ساز اختصاصی)
+
+## ساختار مخزن
 
 ```
-backend/      NestJS API (Prisma + PostgreSQL)
-frontend/     Next.js admin UI
-installer/    Ubuntu 24.04 server bootstrap + deploy scripts
+backend/      بک‌اند NestJS (Prisma + PostgreSQL)
+frontend/     پنل مدیریت Next.js
+installer/    اسکریپت‌های آماده‌سازی سرور (Ubuntu 24.04) و دیپلوی
 ```
 
-## Installing on a fresh Ubuntu 24.04 server
+## نصب روی یک سرور تمیز Ubuntu 24.04
 
-1. Clone this repo onto the server (as root or a sudo-capable user), e.g.
-   into `/opt/persia-panel`:
+۱. کلون کردن این مخزن روی سرور (به‌عنوان root یا با sudo)، مثلاً در
+   مسیر `/opt/persia-panel`:
 
-   ```bash
-   sudo git clone <this-repo-url> /opt/persia-panel
-   cd /opt/persia-panel
-   ```
+```bash
+sudo git clone https://github.com/persiato/persia-panel-server-management.git /opt/persia-panel
+cd /opt/persia-panel
+```
 
-2. Prepare the OS — installs nginx, PHP-FPM (multiple versions), MariaDB,
-   PostgreSQL, BIND9, Postfix, Dovecot, fail2ban, acme.sh, ufw, Node.js:
+۲. آماده‌سازی سیستم‌عامل — نصب nginx، PHP-FPM (چند نسخه)، MariaDB،
+   PostgreSQL، BIND9، Postfix، Dovecot، fail2ban، acme.sh، ufw، Node.js:
 
-   ```bash
-   sudo bash installer/install.sh
-   ```
+```bash
+sudo bash installer/install.sh
+```
 
-3. Deploy the application (builds backend + frontend, creates the database,
-   generates secrets, installs systemd services, and configures the nginx
-   reverse proxy for the panel UI on port 2087):
+۳. دیپلوی خود برنامه (ساخت بک‌اند و فرانت‌اند، ساخت دیتابیس، تولید
+   secretها، ثبت سرویس‌های systemd، و تنظیم nginx برای پنل روی پورت
+   ۲۰۸۷):
 
-   ```bash
-   sudo bash installer/deploy.sh
-   ```
+```bash
+sudo bash installer/deploy.sh
+```
 
-   You'll be prompted for the hostname/IP the panel will be reached at (or
-   set `PANEL_HOST=panel.example.com` beforehand to skip the prompt). At the
-   end it prints the panel URL and a one-time admin password — save it, it
-   is not shown again (it lives in `backend/.env`).
+   در این مرحله آدرس/دامنه‌ای که با آن به پنل وصل می‌شوید پرسیده می‌شود
+   (یا از قبل با `PANEL_HOST=panel.example.com sudo bash installer/deploy.sh`
+   مشخص کنید). در پایان، آدرس پنل و **رمز عبور ادمین** (فقط همین یک‌بار)
+   چاپ می‌شود — حتماً ذخیره کنید.
 
-4. Open `https://<panel-host>:2087` in your browser (the first-run
-   certificate is self-signed, so your browser will warn once) and log in
-   with the printed admin credentials.
+۴. آدرس `https://<panel-host>:2087` را در مرورگر باز کنید (گواهی اولیه
+   self-signed است، پس مرورگر یک هشدار نشان می‌دهد) و با اطلاعات چاپ‌شده
+   وارد شوید.
 
-### Updating an existing install
+### بروزرسانی یک نصب موجود
 
 ```bash
 cd /opt/persia-panel
 sudo git pull
-sudo bash installer/deploy.sh   # idempotent — reuses existing secrets/.env
+sudo bash installer/deploy.sh   # idempotent — secretهای موجود را دوباره نمی‌سازد
 ```
 
-## Local development
+## توسعه محلی (Local development)
 
-See `backend/README.md` and `frontend/README.md` for the standard
-Nest/Next.js dev workflows (`npm run start:dev`, `npm run dev`, etc.), and
-`backend/.env.example` / `frontend/.env.local.example` for the environment
-variables each app expects.
+برای اجرای محلی به `backend/README.md` و `frontend/README.md` (روال
+استاندارد Nest/Next.js — `npm run start:dev`، `npm run dev` و غیره) و
+`backend/.env.example` / `frontend/.env.local.example` (متغیرهای محیطی
+موردنیاز هر بخش) مراجعه کنید.
+
+## نکته امنیتی
+
+فایل‌های `.env` واقعی (شامل رمز دیتابیس، JWT secret و رمز ادمین) هرگز نباید
+به گیت‌هاب پوش شوند — این‌ها در `.gitignore` مستثنی شده‌اند و فقط نسخه‌ی
+نمونه (`*.env.example`) در مخزن قرار دارد.
