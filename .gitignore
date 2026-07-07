@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+backend/dist/
+frontend/.next/
+frontend/out/
+
+# Environment files (never commit real secrets — only .env.example files are tracked)
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.local.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Test coverage
+coverage/
+
+# Prisma
+backend/prisma/*.db
+
+# Claude Code session files (local agent metadata, not project source)
+.claude/

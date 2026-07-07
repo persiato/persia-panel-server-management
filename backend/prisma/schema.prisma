@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  RESELLER
+  USER
+}
+
+enum AppRuntime {
+  STATIC
+  PHP
+  NODE
+  PYTHON
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  role         UserRole @default(USER)
+  diskQuotaMb  Int      @default(1024)
+  isSuspended  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  domains  Domain[]
+  cronJobs CronJob[]
+  apiKeys  ApiKey[]
+
+  @@map("users")
+}
+
+model Domain {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  documentRoot String
+  runtime     AppRuntime @default(STATIC)
+  phpVersion  String?
+  nodeVersion String?
+  pythonVersion String?
+  appEntryPoint String?
+  appPort     Int?
+  publicSubdir String?
+  sslEnabled  Boolean    @default(false)
+  sslIssuedAt DateTime?
+  sslExpiresAt DateTime?
+  isSuspended Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  databases     Database[]
+  backups       Backup[]
+  installedApps InstalledApp[]
+  dnsRecords    DnsRecord[]
+  emailAccounts EmailAccount[]
+
+  @@map("domains")
+}
+
+enum DatabaseEngine {
+  MYSQL
+  POSTGRES
+}
+
+model Database {
+  id        String         @id @default(uuid())
+  name      String
+  engine    DatabaseEngine
+  username  String
+  createdAt DateTime       @default(now())
+
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  installedApp InstalledApp?
+
+  @@unique([name, engine])
+  @@map("databases")
+}
+
+enum InstallStatus {
+  INSTALLING
+  COMPLETE
+  FAILED
+}
+
+// One-click app installer (e.g. WordPress, phpMyAdmin) — tracks what's been
+// installed into a subpath of a domain's documentRoot, and (optionally) the
+// dedicated database that was auto-provisioned for it, mirroring Backup's
+// visible-on-failure pattern (a FAILED row is kept with `error` set rather
+// than silently dropping a failed install attempt).
+model InstalledApp {
+  id         String        @id @default(uuid())
+  appId      String
+  version    String
+  targetPath String        @default("")
+  status     InstallStatus @default(INSTALLING)
+  error      String?
+  createdAt  DateTime      @default(now())
+
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  databaseId String?   @unique
+  database   Database? @relation(fields: [databaseId], references: [id], onDelete: SetNull)
+
+  @@map("installed_apps")
+}
+
+enum BackupStatus {
+  PENDING
+  COMPLETE
+  FAILED
+}
+
+model Backup {
+  id        String       @id @default(uuid())
+  fileName  String
+  sizeBytes Float        @default(0)
+  status    BackupStatus @default(PENDING)
+  error     String?
+  createdAt DateTime     @default(now())
+
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@map("backups")
+}
+
+model CronJob {
+  id        String   @id @default(uuid())
+  schedule  String
+  command   String
+  isEnabled Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@map("cron_jobs")
+}
+
+// Server-wide fallback connectivity: an admin-configured SSH tunnel to a
+// relay/bastion host outside Iran, exposed locally as a SOCKS5 proxy, for
+// when direct outbound connectivity to a given upstream is blocked/unreliable
+// (the same sanctions-resilience concern the installer's HTTPS_PROXY escape
+// hatch and the app-installer's downloadUrlEnvVar overrides address).
+// Singleton table — the service only ever reads/writes a single row.
+// The private key itself is never stored in the database; only the path to
+// the 0600 key file it was written to on disk (see ssh-tunnel.service.ts).
+model SshTunnelConfig {
+  id              String   @id @default(uuid())
+  host            String
+  port            Int      @default(22)
+  username        String
+  localProxyPort  Int      @default(1080)
+  privateKeyPath  String?
+  enabled         Boolean  @default(false)
+  lastError       String?
+  updatedAt       DateTime @updatedAt
+
+  @@map("ssh_tunnel_configs")
+}
+
+enum DnsRecordType {
+  A
+  AAAA
+  CNAME
+  MX
+  TXT
+  NS
+  SRV
+}
+
+// One row per DNS resource record. The authoritative source of truth for a
+// domain's BIND zone file — SystemDnsService regenerates and reloads the
+// zone from the full set of a domain's records on every create/update/delete
+// (mirrors NginxService's "re-render the whole vhost from the Domain row"
+// idiom rather than trying to patch the zone file in place).
+model DnsRecord {
+  id       String        @id @default(uuid())
+  type     DnsRecordType
+  name     String // relative label, e.g. "@", "www", "mail"
+  value    String
+  ttl      Int           @default(3600)
+  priority Int? // MX/SRV only
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@map("dns_records")
+}
+
+// A virtual mailbox served by Postfix (delivery/routing) + Dovecot
+// (IMAP/POP3 + auth). Mirrors the DB-provisioner invariant: the password
+// itself is never stored here — only Dovecot's own credential file on disk
+// holds it (see system/mail/mail.service.ts), the same "never persist a
+// plaintext secret in Postgres" rule used for SshTunnelConfig's private key.
+model EmailAccount {
+  id        String   @id @default(uuid())
+  localPart String
+  quotaMb   Int      @default(1024)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([domainId, localPart])
+  @@map("email_accounts")
+}
+
+// API keys let an external system (e.g. a custom site-builder product) call
+// this panel's API programmatically with the same privileges as the owning
+// user's normal JWT session — see auth/jwt-auth.guard.ts, which accepts
+// either a JWT or an `X-API-Key` header. Only a SHA-256 digest of the raw key
+// is stored (high-entropy random token, so a fast deterministic hash is fine
+// for lookup — unlike user passwords, which use slow bcrypt); the raw key is
+// shown to the user exactly once, at creation time, and never again.
+model ApiKey {
+  id         String    @id @default(uuid())
+  label      String
+  prefix     String // first few chars of the raw token, shown in the UI so the user can tell keys apart
+  hashedKey  String    @unique
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
