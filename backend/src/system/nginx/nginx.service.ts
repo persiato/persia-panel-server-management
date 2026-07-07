@@ -9,6 +9,14 @@ import { assertValidDomainName } from '../../common/validators/domain-name';
 
 const execFileAsync = promisify(execFile);
 
+// Mirrors SUPPORTED_PHP_VERSIONS in domains/dto/create-domain.dto.ts and the
+// php_versions array in installer/install.sh. domain.phpVersion is
+// interpolated directly into the generated nginx vhost file (the
+// fastcgi_pass socket path below) — an unvalidated value here isn't just a
+// path-traversal risk, it's raw nginx-config injection, since this string is
+// written straight into a config file that nginx then parses.
+const SUPPORTED_PHP_VERSIONS = new Set(['7.4', '8.0', '8.1', '8.2', '8.3']);
+
 @Injectable()
 export class NginxService {
   private readonly logger = new Logger(NginxService.name);
@@ -62,6 +70,9 @@ export class NginxService {
     switch (domain.runtime) {
       case 'PHP': {
         const version = domain.phpVersion ?? '8.3';
+        if (!SUPPORTED_PHP_VERSIONS.has(version)) {
+          throw new Error(`Unsupported PHP version: ${version}`);
+        }
         // Falls back to index.php for any non-file path so WordPress/Laravel
         // front-controller routing (pretty permalinks, framework routes) works.
         rootLocation = `

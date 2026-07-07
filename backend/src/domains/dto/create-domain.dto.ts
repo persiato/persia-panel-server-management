@@ -1,5 +1,6 @@
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -7,6 +8,14 @@ import {
   Min,
 } from 'class-validator';
 import { AppRuntime } from '@prisma/client';
+
+// Kept in sync with the php_versions array in installer/install.sh — those
+// are the only PHP-FPM pools that actually exist on the server. phpVersion
+// is interpolated into filesystem paths and socket names in RuntimeService/
+// NginxService (e.g. `/etc/php/{version}/fpm/pool.d`), so without this
+// allowlist any authenticated user could pass an arbitrary string and make
+// the root backend process read/write paths outside the intended directory.
+export const SUPPORTED_PHP_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3'];
 
 export class CreateDomainDto {
   @IsString()
@@ -23,7 +32,7 @@ export class CreateDomainDto {
   runtime?: AppRuntime;
 
   @IsOptional()
-  @IsString()
+  @IsIn(SUPPORTED_PHP_VERSIONS)
   phpVersion?: string;
 
   @IsOptional()

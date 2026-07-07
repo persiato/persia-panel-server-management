@@ -10,6 +10,14 @@ import { assertValidDomainName } from '../../common/validators/domain-name';
 const execFileAsync = promisify(execFile);
 const LINUX_USERNAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 
+// Mirrors SUPPORTED_PHP_VERSIONS in domains/dto/create-domain.dto.ts and the
+// php_versions array in installer/install.sh. phpVersion is interpolated
+// into this.phpPoolDir (e.g. `/etc/php/{version}/fpm/pool.d`) and into a
+// socket path/systemctl unit name below, so it must be checked here too —
+// the DTO validates create requests, but domain.phpVersion could also arrive
+// via a stored/legacy row, and removePhpPool takes a raw parameter.
+const SUPPORTED_PHP_VERSIONS = new Set(['7.4', '8.0', '8.1', '8.2', '8.3']);
+
 @Injectable()
 export class RuntimeService {
   private readonly logger = new Logger(RuntimeService.name);
@@ -30,6 +38,12 @@ export class RuntimeService {
   private assertSystemUser(username: string): void {
     if (!LINUX_USERNAME_RE.test(username)) {
       throw new Error(`Invalid system username: ${username}`);
+    }
+  }
+
+  private assertSupportedPhpVersion(version: string): void {
+    if (!SUPPORTED_PHP_VERSIONS.has(version)) {
+      throw new Error(`Unsupported PHP version: ${version}`);
     }
   }
 
@@ -62,6 +76,7 @@ export class RuntimeService {
     assertValidDomainName(domain.name);
     this.assertSystemUser(owner.username);
     const version = domain.phpVersion ?? '8.3';
+    this.assertSupportedPhpVersion(version);
     const poolDir = this.phpPoolDir.replace('{version}', version);
     const poolFile = path.join(poolDir, `${domain.name}.conf`);
 
@@ -86,6 +101,7 @@ chdir = ${domain.documentRoot}
 
   async removePhpPool(domainName: string, phpVersion = '8.3'): Promise<void> {
     assertValidDomainName(domainName);
+    this.assertSupportedPhpVersion(phpVersion);
     const poolDir = this.phpPoolDir.replace('{version}', phpVersion);
     await fs.rm(path.join(poolDir, `${domainName}.conf`), { force: true });
     await execFileAsync('systemctl', ['reload', `php${phpVersion}-fpm`]).catch(

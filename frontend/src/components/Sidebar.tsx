@@ -19,7 +19,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/apps", label: "نصب یک‌کلیکی", icon: "📦", enabled: true },
   { href: "/email", label: "ایمیل", icon: "✉️", enabled: true },
   { href: "/dns", label: "DNS", icon: "🧭", enabled: true },
-  { href: "/ssl", label: "SSL / گواهی امنیتی", icon: "🔒", enabled: false },
   { href: "/backups", label: "بک‌آپ", icon: "💾", enabled: true },
   { href: "/security", label: "امنیت و فایروال", icon: "🛡️", enabled: true },
   { href: "/connectivity", label: "اتصال جایگزین (SSH)", icon: "🔌", enabled: true },

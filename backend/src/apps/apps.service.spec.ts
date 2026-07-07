@@ -1,9 +1,31 @@
+import { promisify } from 'node:util';
 import {
   BadRequestException,
   ConflictException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+
+// `execFile` has built-in custom-promisify support (it defines
+// util.promisify.custom), so a bare jest.fn() mock loses that behavior when
+// wrapped in promisify(). Replicate the same custom-promisify wiring here so
+// `promisify(execFile)` inside apps.service.ts (used for the post-install
+// chown) resolves through our mock instead of shelling out for real.
+const mockExecFileAsync = jest
+  .fn()
+  .mockResolvedValue({ stdout: '', stderr: '' });
+
+jest.mock('node:child_process', () => {
+  const actual =
+    jest.requireActual<typeof import('node:child_process')>(
+      'node:child_process',
+    );
+  const execFileMock = Object.assign(jest.fn(), {
+    [promisify.custom]: mockExecFileAsync,
+  });
+  return { ...actual, execFile: execFileMock };
+});
+
 import { PrismaService } from '../prisma/prisma.service';
 import { AppInstallerService } from '../system/app-installer/app-installer.service';
 import { DbProvisionerService } from '../system/db-provisioner/db-provisioner.service';
@@ -87,6 +109,11 @@ const WORDPRESS_DEF = {
 };
 
 describe('AppsService', () => {
+  beforeEach(() => {
+    mockExecFileAsync.mockClear();
+    mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+  });
+
   describe('install', () => {
     it('throws NotFoundException for a domain owned by someone else (non-admin)', async () => {
       const { prisma, appInstaller, provisioner } = makeDeps();
@@ -152,6 +179,7 @@ describe('AppsService', () => {
     it('installs an app that does not require a database', async () => {
       const { prisma, appInstaller, provisioner } = makeDeps();
       prisma.domain.findUnique.mockResolvedValue(DOMAIN);
+      prisma.user.findUniqueOrThrow.mockResolvedValue({ username: 'alice' });
       appInstaller.getDefinition.mockReturnValue(PHPMYADMIN_DEF);
       appInstaller.install.mockResolvedValue({ version: '5.2.1' });
       prisma.installedApp.create.mockResolvedValue({
@@ -172,6 +200,14 @@ describe('AppsService', () => {
         `${DOMAIN.documentRoot}/phpmyadmin`,
         undefined,
       );
+      // The installer runs as root; files must be chowned to the domain
+      // owner's Linux account so php-fpm (running as that user) can read
+      // and write them.
+      expect(mockExecFileAsync).toHaveBeenCalledWith('chown', [
+        '-R',
+        'alice:alice',
+        `${DOMAIN.documentRoot}/phpmyadmin`,
+      ]);
       expect(prisma.installedApp.create).toHaveBeenCalledWith({
         data: {
           appId: 'phpmyadmin',
@@ -216,6 +252,11 @@ describe('AppsService', () => {
           password: 'generated-password',
         }),
       );
+      expect(mockExecFileAsync).toHaveBeenCalledWith('chown', [
+        '-R',
+        'alice:alice',
+        DOMAIN.documentRoot,
+      ]);
 
       expect(prisma.installedApp.create).toHaveBeenCalledWith({
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

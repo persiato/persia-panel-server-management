@@ -9,6 +9,8 @@ import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { DatabaseEngine } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -19,6 +21,8 @@ import {
 import { DbProvisionerService } from '../system/db-provisioner/db-provisioner.service';
 import { isValidRelativePath } from '../common/validators/relative-path';
 import { InstallAppDto } from './dto/install-app.dto';
+
+const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class AppsService {
@@ -68,13 +72,14 @@ export class AppsService {
       );
     }
 
+    const owner = await this.prisma.user.findUniqueOrThrow({
+      where: { id: domain.ownerId },
+    });
+
     let database: { id: string; name: string; username: string } | undefined;
     try {
       let dbCredentials: DbCredentials | undefined;
       if (def.requiresDatabase) {
-        const owner = await this.prisma.user.findUniqueOrThrow({
-          where: { id: domain.ownerId },
-        });
         const suffix = crypto.randomBytes(3).toString('hex');
         const identifier = `${owner.username}_${def.id}_${suffix}`
           .replace(/[^a-zA-Z0-9_]/g, '_')
@@ -106,6 +111,16 @@ export class AppsService {
         targetDir,
         dbCredentials,
       );
+
+      // The installer runs as root (the backend service itself runs as
+      // root), so files land root:root by default while php-fpm serves the
+      // domain as `owner.username` — silently breaking anything the app
+      // needs to write (WordPress plugin/theme installs, uploads, etc.).
+      await execFileAsync('chown', [
+        '-R',
+        `${owner.username}:${owner.username}`,
+        targetDir,
+      ]);
 
       return this.prisma.installedApp.create({
         data: {
