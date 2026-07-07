@@ -84,9 +84,3 @@ sudo bash installer/deploy.sh   # idempotent — secretهای موجود را د
 استاندارد Nest/Next.js — `npm run start:dev`، `npm run dev` و غیره) و
 `backend/.env.example` / `frontend/.env.local.example` (متغیرهای محیطی
 موردنیاز هر بخش) مراجعه کنید.
-
-## نکته امنیتی
-
-فایل‌های `.env` واقعی (شامل رمز دیتابیس، JWT secret و رمز ادمین) هرگز نباید
-به گیت‌هاب پوش شوند — این‌ها در `.gitignore` مستثنی شده‌اند و فقط نسخه‌ی
-نمونه (`*.env.example`) در مخزن قرار دارد.
