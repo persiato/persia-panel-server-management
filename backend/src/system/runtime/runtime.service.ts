@@ -33,6 +33,31 @@ export class RuntimeService {
     }
   }
 
+  // PHP-FPM pools and app systemd units run as the domain owner's Linux
+  // account (`owner.username`), but that account is just a row in our own
+  // User table — nothing else in the codebase ever provisions a matching OS
+  // user. Without this, php-fpm fails to start the pool (and the whole
+  // php-fpm master can die with it) the first time a domain is owned by a
+  // username with no corresponding `/etc/passwd` entry. Call this before
+  // writing any pool/unit file that references `owner.username`.
+  async ensureSystemUser(username: string, homeDir: string): Promise<void> {
+    this.assertSystemUser(username);
+    try {
+      await execFileAsync('id', ['-u', username]);
+      return; // already exists
+    } catch {
+      // fall through and create it
+    }
+    await execFileAsync('useradd', [
+      '--home-dir',
+      homeDir,
+      '--no-create-home',
+      '--shell',
+      '/usr/sbin/nologin',
+      username,
+    ]);
+  }
+
   async createOrUpdatePhpPool(domain: Domain, owner: User): Promise<void> {
     assertValidDomainName(domain.name);
     this.assertSystemUser(owner.username);

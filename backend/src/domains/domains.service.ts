@@ -8,6 +8,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { PrismaService } from '../prisma/prisma.service';
 import { NginxService } from '../system/nginx/nginx.service';
 import { RuntimeService } from '../system/runtime/runtime.service';
@@ -16,6 +18,8 @@ import { SystemMailService } from '../system/mail/mail.service';
 import { DnsService } from '../dns/dns.service';
 import { DnsRecordType } from '@prisma/client';
 import { CreateDomainDto } from './dto/create-domain.dto';
+
+const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class DomainsService {
@@ -44,13 +48,21 @@ export class DomainsService {
     const owner = await this.prisma.user.findUniqueOrThrow({
       where: { id: ownerId },
     });
-    const documentRoot = path.join(
-      this.webroot,
-      owner.username,
-      'public_html',
-      dto.name,
-    );
+    const homeDir = path.join(this.webroot, owner.username);
+    const documentRoot = path.join(homeDir, 'public_html', dto.name);
     await fs.mkdir(documentRoot, { recursive: true });
+
+    // The PHP-FPM pool / app systemd unit we're about to write run as
+    // `owner.username`. That's only ever been a row in our own User table,
+    // so make sure a matching Linux account actually exists before anything
+    // downstream references it — otherwise php-fpm fails to start the pool
+    // (see RuntimeService.ensureSystemUser for the full story).
+    await this.runtime.ensureSystemUser(owner.username, homeDir);
+    await execFileAsync('chown', [
+      '-R',
+      `${owner.username}:${owner.username}`,
+      documentRoot,
+    ]);
 
     const domain = await this.prisma.domain.create({
       data: {

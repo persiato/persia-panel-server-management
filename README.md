@@ -38,8 +38,29 @@ installer/    اسکریپت‌های آماده‌سازی سرور (Ubuntu 24.
 
 ## نصب روی یک سرور تمیز Ubuntu 24.04
 
-۱. کلون کردن این مخزن روی سرور (به‌عنوان root یا با sudo)، مثلاً در
-   مسیر `/opt/persia-panel`:
+۱. دانلود این مخزن روی سرور و قرار دادن آن در مسیر `/opt/persia-panel`.
+
+   اگر `git clone` روی سرور شما (مثلاً به‌دلیل محدودیت‌های شبکه‌ای روی
+   پورت 443 برای گیت‌هاب) گیر می‌کند، به‌جای آن از دانلود مستقیم آرشیو
+   zip استفاده کنید:
+
+```bash
+sudo apt update
+sudo apt install unzip -y
+
+wget https://github.com/persiato/persia-panel-server-management/archive/refs/heads/main.zip
+
+mkdir -p /opt/persia-panel
+unzip main.zip
+mv persia-panel-server-management-main/* /opt/persia-panel/
+mv persia-panel-server-management-main/.[!.]* /opt/persia-panel/ 2>/dev/null || true
+rm -rf persia-panel-server-management-main main.zip
+
+cd /opt/persia-panel
+```
+
+   اگر اتصال شما مشکلی ندارد، به‌جای این روش می‌توانید مستقیماً از
+   `git clone` استفاده کنید:
 
 ```bash
 sudo git clone https://github.com/persiato/persia-panel-server-management.git /opt/persia-panel
@@ -77,6 +98,10 @@ cd /opt/persia-panel
 sudo git pull
 sudo bash installer/deploy.sh   # idempotent — secretهای موجود را دوباره نمی‌سازد
 ```
+
+   اگر `git pull` هم به‌همان دلیل شبکه‌ای گیر کرد، آرشیو zip جدید را
+   دوباره دانلود و جایگزین کنید (مرحله ۱ همین بخش) و سپس دوباره
+   `installer/deploy.sh` را اجرا کنید.
 
 ## توسعه محلی (Local development)
 

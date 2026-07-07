@@ -254,8 +254,8 @@ install_ssl_tooling() {
     log_warn "Could not download acme.sh installer, skipping automatic SSL setup for now"
     return
   fi
-  bash /tmp/acme-install.sh --home /opt/acme.sh --accountemail "admin@localhost" >/dev/null
-  /opt/acme.sh/acme.sh --set-default-ca --server "${ca}" || true
+  bash /tmp/acme-install.sh --home /opt/acme.sh --accountemail "admin@example.com" >/dev/null
+  /opt/acme.sh/acme.sh --home /opt/acme.sh --set-default-ca --server "${ca}" || true
 }
 
 configure_acme_webroot() {
