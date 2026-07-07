@@ -38,6 +38,33 @@ installer/    اسکریپت‌های آماده‌سازی سرور (Ubuntu 24.
 
 ## نصب روی یک سرور تمیز Ubuntu 24.04
 
+### روش سریع — یک دستور تک‌خطی
+
+اگر می‌خواهید کل نصب (دانلود کد + آماده‌سازی سیستم‌عامل + دیپلوی برنامه)
+را با یک دستور کپی/پیست انجام دهید، همین یک خط را روی سرور اجرا کنید
+(به‌جای `git clone` از دانلود مستقیم آرشیو zip استفاده می‌کند، چون
+`git clone` روی سرورهایی با محدودیت شبکه‌ای روی گیت‌هاب معمولاً گیر
+می‌کند، درحالی‌که دانلود مستقیم فایل zip از همان دامنه معمولاً کار
+می‌کند):
+
+```bash
+sudo apt update && sudo apt install -y unzip && wget -O /tmp/pp.zip https://github.com/persiato/persia-panel-server-management/archive/refs/heads/main.zip && sudo mkdir -p /opt/persia-panel && unzip -oq /tmp/pp.zip -d /tmp && sudo cp -a /tmp/persia-panel-server-management-main/. /opt/persia-panel/ && rm -rf /tmp/persia-panel-server-management-main /tmp/pp.zip && cd /opt/persia-panel && sudo bash installer/quickstart.sh
+```
+
+در انتها آدرس پنل و **رمز عبور ادمین** (فقط همین یک‌بار) چاپ می‌شود —
+حتماً ذخیره کنید. برای تعیین دامنه/آدرسی که با آن به پنل وصل می‌شوید،
+همان دستور را با `PANEL_HOST=panel.example.com` قبل از آن اجرا کنید:
+
+```bash
+sudo apt update && sudo apt install -y unzip && wget -O /tmp/pp.zip https://github.com/persiato/persia-panel-server-management/archive/refs/heads/main.zip && sudo mkdir -p /opt/persia-panel && unzip -oq /tmp/pp.zip -d /tmp && sudo cp -a /tmp/persia-panel-server-management-main/. /opt/persia-panel/ && rm -rf /tmp/persia-panel-server-management-main /tmp/pp.zip && cd /opt/persia-panel && sudo PANEL_HOST=panel.example.com bash installer/quickstart.sh
+```
+
+سپس آدرس `https://<panel-host>:2087` را در مرورگر باز کنید (گواهی اولیه
+self-signed است، پس مرورگر یک هشدار نشان می‌دهد) و با اطلاعات چاپ‌شده
+وارد شوید.
+
+### روش گام‌به‌گام (برای دیباگ یا کنترل بیشتر روی هر مرحله)
+
 ۱. دانلود این مخزن روی سرور و قرار دادن آن در مسیر `/opt/persia-panel`.
 
    اگر `git clone` روی سرور شما (مثلاً به‌دلیل محدودیت‌های شبکه‌ای روی
@@ -87,6 +114,10 @@ sudo bash installer/deploy.sh
    مشخص کنید). در پایان، آدرس پنل و **رمز عبور ادمین** (فقط همین یک‌بار)
    چاپ می‌شود — حتماً ذخیره کنید.
 
+   نکته: مراحل ۲ و ۳ را می‌توانید با یک دستور هم انجام دهید:
+   `sudo bash installer/quickstart.sh` (دقیقاً معادل اجرای پشت‌سرهم
+   `install.sh` و `deploy.sh`).
+
 ۴. آدرس `https://<panel-host>:2087` را در مرورگر باز کنید (گواهی اولیه
    self-signed است، پس مرورگر یک هشدار نشان می‌دهد) و با اطلاعات چاپ‌شده
    وارد شوید.
@@ -100,8 +131,10 @@ sudo bash installer/deploy.sh   # idempotent — secretهای موجود را د
 ```
 
    اگر `git pull` هم به‌همان دلیل شبکه‌ای گیر کرد، آرشیو zip جدید را
-   دوباره دانلود و جایگزین کنید (مرحله ۱ همین بخش) و سپس دوباره
-   `installer/deploy.sh` را اجرا کنید.
+   دوباره دانلود و جایگزین کنید (مرحله ۱ روش گام‌به‌گام بالا) و سپس
+   دوباره `installer/deploy.sh` را اجرا کنید. برای بروزرسانی فقط
+   `deploy.sh` کافی است — `install.sh`/`quickstart.sh` نیازی نیست
+   دوباره اجرا شود مگر بخواهید بسته‌های سیستم‌عامل را هم به‌روز کنید.
 
 ## توسعه محلی (Local development)
 
