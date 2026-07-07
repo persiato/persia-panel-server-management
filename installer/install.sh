@@ -250,12 +250,39 @@ install_ssl_tooling() {
   local ca
   ca="$(pick_acme_ca)"
   log_info "Selected ACME CA: ${ca}"
-  if ! retry curl -fsSL https://get.acme.sh -o /tmp/acme-install.sh; then
-    log_warn "Could not download acme.sh installer, skipping automatic SSL setup for now"
-    return
+
+  if [[ -x /opt/acme.sh/acme.sh ]]; then
+    log_ok "acme.sh already installed, skipping"
+  elif retry curl -fsSL https://get.acme.sh -o /tmp/acme-install.sh \
+    && bash /tmp/acme-install.sh --home /opt/acme.sh >/dev/null 2>&1; then
+    log_ok "acme.sh installed via get.acme.sh"
+  else
+    # get.acme.sh redirects through raw.githubusercontent.com, which — like
+    # plain `git clone` against github.com — can hang/fail on networks with
+    # restrictions on GitHub (this is the exact same class of issue the zip-
+    # download install method works around). Fall back to fetching acme.sh's
+    # source straight from GitHub as a tarball (no `unzip` dependency needed)
+    # and running its install script directly, mirroring the wget-zip
+    # fallback documented in the README for this repo itself.
+    log_warn "get.acme.sh unreachable/failed, falling back to direct GitHub tarball download"
+    rm -rf /tmp/acme-sh-src /tmp/acme-sh.tar.gz
+    if retry wget -q -O /tmp/acme-sh.tar.gz \
+      https://github.com/acmesh-official/acme.sh/archive/refs/heads/master.tar.gz \
+      && mkdir -p /tmp/acme-sh-src \
+      && tar -xzf /tmp/acme-sh.tar.gz -C /tmp/acme-sh-src --strip-components=1 \
+      && (cd /tmp/acme-sh-src && ./acme.sh --install --home /opt/acme.sh >/dev/null 2>&1); then
+      log_ok "acme.sh installed via GitHub tarball fallback"
+    else
+      log_warn "Could not install acme.sh through either method — SSL certificate issuance from the panel will fail until this is fixed. Re-run 'sudo bash installer/install.sh' once connectivity to GitHub is available, or install acme.sh manually: https://github.com/acmesh-official/acme.sh#1-how-to-install"
+    fi
+    rm -rf /tmp/acme-sh-src /tmp/acme-sh.tar.gz
   fi
-  bash /tmp/acme-install.sh --home /opt/acme.sh --accountemail "admin@example.com" >/dev/null
-  /opt/acme.sh/acme.sh --home /opt/acme.sh --set-default-ca --server "${ca}" || true
+
+  if [[ -x /opt/acme.sh/acme.sh ]]; then
+    /opt/acme.sh/acme.sh --home /opt/acme.sh --set-default-ca --server "${ca}" || true
+  else
+    log_warn "acme.sh binary still missing at /opt/acme.sh/acme.sh — SSL issuance ('Failed to issue SSL certificate: spawn /opt/acme.sh/acme.sh ENOENT') will fail until acme.sh is installed. Re-run installer/install.sh to retry."
+  fi
 }
 
 configure_acme_webroot() {

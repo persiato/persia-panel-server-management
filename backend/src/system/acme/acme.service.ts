@@ -45,8 +45,26 @@ export class AcmeService {
     };
   }
 
+  // Without this, a missing acme.sh install (e.g. the installer's acme.sh
+  // download failed/was skipped on a restricted network — see
+  // installer/install.sh's install_ssl_tooling) surfaces as a raw Node
+  // "spawn /opt/acme.sh/acme.sh ENOENT" bubbled all the way to the panel UI,
+  // which gives the admin no idea what's actually wrong or how to fix it.
+  private async assertAcmeInstalled(): Promise<void> {
+    try {
+      await fs.access(this.acmeBin, fs.constants.X_OK);
+    } catch {
+      throw new Error(
+        `acme.sh is not installed at ${this.acmeBin}. Re-run the installer ` +
+          '(sudo bash installer/install.sh) to install it, or install it ' +
+          'manually: https://github.com/acmesh-official/acme.sh#1-how-to-install',
+      );
+    }
+  }
+
   async issue(domainName: string): Promise<IssuedCertificate> {
     assertValidDomainName(domainName);
+    await this.assertAcmeInstalled();
     await fs.mkdir(this.webroot, { recursive: true });
     const { dir, key, fullchain } = this.certPaths(domainName);
     await fs.mkdir(dir, { recursive: true });
@@ -91,6 +109,7 @@ export class AcmeService {
   // Intended to be invoked by a system cron entry (acme.sh manages its own
   // renewal schedule internally; this just triggers its due-for-renewal check).
   async renewAll(): Promise<void> {
+    await this.assertAcmeInstalled();
     await execFileAsync(this.acmeBin, [
       '--home',
       this.acmeHome,
@@ -103,6 +122,7 @@ export class AcmeService {
 
   async remove(domainName: string): Promise<void> {
     assertValidDomainName(domainName);
+    await this.assertAcmeInstalled();
     await execFileAsync(this.acmeBin, [
       '--home',
       this.acmeHome,
