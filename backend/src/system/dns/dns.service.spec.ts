@@ -137,11 +137,51 @@ describe('SystemDnsService.renderZoneFile', () => {
     expect(content).toContain('TXT "has \\"quotes\\""');
   });
 
-  it('falls back to a synthesized ns1 host when no NS hostnames are configured', () => {
+  it('falls back to this panel as ns1/ns2 when no NS hostnames are configured', () => {
+    // BIND's named-checkzone fatally rejects a zone with zero NS records at
+    // the apex ("has no NS records") — a zone can never actually skip NS
+    // records, so the fallback must synthesize real ones, not just an SOA
+    // MNAME with nothing to back it.
     const service = makeService({ DNS_NS_HOSTNAMES: '' });
     const content = service.renderZoneFile('example.com', []);
     expect(content).toContain('SOA ns1.example.com.');
-    expect(content).not.toMatch(/IN NS/);
+    expect(content).toContain('@ 3600 IN NS ns1.example.com.');
+    expect(content).toContain('@ 3600 IN NS ns2.example.com.');
+  });
+
+  it('adds glue A records for in-zone ns1/ns2 fallback when SERVER_PUBLIC_IP is set', () => {
+    const service = makeService({
+      DNS_NS_HOSTNAMES: '',
+      SERVER_PUBLIC_IP: '203.0.113.20',
+    });
+    const content = service.renderZoneFile('example.com', []);
+    expect(content).toContain('ns1 3600 IN A 203.0.113.20');
+    expect(content).toContain('ns2 3600 IN A 203.0.113.20');
+  });
+
+  it('does not add a glue A record when the admin already defined one explicitly', () => {
+    const service = makeService({
+      DNS_NS_HOSTNAMES: '',
+      SERVER_PUBLIC_IP: '203.0.113.20',
+    });
+    const content = service.renderZoneFile('example.com', [
+      { type: 'A', name: 'ns1', value: '198.51.100.5', ttl: 3600 },
+    ]);
+    expect(content).toContain('ns1 3600 IN A 198.51.100.5');
+    // ns1's glue must not be overridden by the auto-generated IP...
+    expect(content).not.toContain('ns1 3600 IN A 203.0.113.20');
+    // ...but ns2 (not explicitly defined) still gets its normal glue record.
+    expect(content).toContain('ns2 3600 IN A 203.0.113.20');
+  });
+
+  it('does not add glue records for NS hostnames outside this zone', () => {
+    const service = makeService({
+      DNS_NS_HOSTNAMES: 'ns1.otherprovider.net,ns2.otherprovider.net',
+      SERVER_PUBLIC_IP: '203.0.113.20',
+    });
+    const content = service.renderZoneFile('example.com', []);
+    expect(content).toContain('@ 3600 IN NS ns1.otherprovider.net.');
+    expect(content).not.toContain('203.0.113.20');
   });
 });
 

@@ -82,6 +82,7 @@ export class SystemDnsService {
   private readonly bindConfigDir: string;
   private readonly defaultTtl: number;
   private readonly nsHostnames: string[];
+  private readonly publicIp?: string;
 
   constructor(private readonly config: ConfigService) {
     this.zonesDir = this.config.get<string>(
@@ -102,6 +103,22 @@ export class SystemDnsService {
           .map((s) => s.trim())
           .filter(Boolean)
       : [];
+    this.publicIp = this.config.get<string>('SERVER_PUBLIC_IP');
+  }
+
+  // BIND's `named-checkzone` fatally rejects any zone with no NS records at
+  // the apex ("has no NS records") — it won't just warn, it refuses to load
+  // the zone at all, which is what turned every DNS record add/update into
+  // an Internal Server Error on installs that leave DNS_NS_HOSTNAMES unset
+  // (its documented "leave empty to skip NS records while testing" behavior
+  // was never actually safe). Rather than require every install to go
+  // configure real nameserver hostnames up front, fall back to this panel
+  // acting as the domain's own nameserver (ns1./ns2.<domain>) — the same
+  // default posture as cPanel/DirectAdmin/etc when no custom NS pair is set.
+  private effectiveNsHostnames(domainName: string): string[] {
+    return this.nsHostnames.length > 0
+      ? this.nsHostnames
+      : [`ns1.${domainName}`, `ns2.${domainName}`];
   }
 
   zoneFilePath(domainName: string): string {
@@ -132,7 +149,8 @@ export class SystemDnsService {
   }
 
   renderZoneFile(domainName: string, records: DnsRecordInput[]): string {
-    const soaHost = this.fqdn(this.nsHostnames[0] ?? `ns1.${domainName}`);
+    const nsHostnames = this.effectiveNsHostnames(domainName);
+    const soaHost = this.fqdn(nsHostnames[0]);
     const lines = [
       '; Managed by Persia Panel — do not edit manually',
       `$TTL ${this.defaultTtl}`,
@@ -145,8 +163,27 @@ export class SystemDnsService {
       '',
     ];
 
-    for (const ns of this.nsHostnames) {
+    for (const ns of nsHostnames) {
       lines.push(`@ ${this.defaultTtl} IN NS ${this.fqdn(ns)}`);
+    }
+
+    // Glue: if an NS hostname lives inside this same zone (e.g. our default
+    // ns1./ns2.<domain>) it needs its own A record here, or BIND has no
+    // address to actually reach it at. Only add it when the admin hasn't
+    // already defined that name explicitly, and only when we know an IP to
+    // point it at.
+    if (this.publicIp) {
+      for (const ns of nsHostnames) {
+        const suffix = `.${domainName}`;
+        if (ns !== domainName && !ns.endsWith(suffix)) continue;
+        const label = ns === domainName ? '@' : ns.slice(0, -suffix.length);
+        const alreadyDefined = records.some(
+          (r) => r.type === 'A' && r.name === label,
+        );
+        if (!alreadyDefined) {
+          lines.push(`${label} ${this.defaultTtl} IN A ${this.publicIp}`);
+        }
+      }
     }
 
     for (const r of records) {

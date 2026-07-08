@@ -132,6 +132,12 @@ model Backup {
   error     String?
   createdAt DateTime     @default(now())
 
+  // Best-effort offsite copy (see BackupDestinationConfig): a failed/absent
+  // remote push must never affect the local backup's own status above, so
+  // this is tracked independently rather than folded into `status`/`error`.
+  offsiteSyncedAt DateTime?
+  offsiteError    String?
+
   domainId String
   domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
 
@@ -172,6 +178,26 @@ model SshTunnelConfig {
   updatedAt       DateTime @updatedAt
 
   @@map("ssh_tunnel_configs")
+}
+
+// Server-wide offsite backup destination: a remote host (rsync-over-SSH)
+// that every completed local backup is best-effort pushed to right after
+// it's created. Singleton table, same shape/idiom as SshTunnelConfig above
+// (including never storing the private key itself in the database — only
+// the path to the 0600 key file on disk).
+model BackupDestinationConfig {
+  id             String    @id @default(uuid())
+  host           String
+  port           Int       @default(22)
+  username       String
+  remotePath     String
+  privateKeyPath String?
+  enabled        Boolean   @default(true)
+  lastError      String?
+  lastSyncedAt   DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  @@map("backup_destination_configs")
 }
 
 enum DnsRecordType {

@@ -20,6 +20,7 @@ import { SshTunnelModule } from './ssh-tunnel/ssh-tunnel.module';
 import { DnsModule } from './dns/dns.module';
 import { EmailModule } from './email/email.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
+import { BackupDestinationModule } from './backup-destinations/backup-destination.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
     SshTunnelModule,
     DnsModule,
     EmailModule,
+    BackupDestinationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

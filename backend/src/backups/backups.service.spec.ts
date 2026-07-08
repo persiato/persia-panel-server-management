@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BackupService } from '../system/backup/backup.service';
+import { SystemBackupDestinationService } from '../system/backup-destination/backup-destination.service';
 import { BackupsService } from './backups.service';
 
 function makeDeps() {
@@ -10,7 +11,15 @@ function makeDeps() {
     backup: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
       delete: jest.fn(),
+    },
+    // No offsite destination configured by default — pushOffsite() is a
+    // no-op unless a test explicitly sets this up, so existing local-only
+    // backup behavior is unaffected.
+    backupDestinationConfig: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
     },
   };
   const backup = {
@@ -19,7 +28,11 @@ function makeDeps() {
     remove: jest.fn(),
     filePath: jest.fn(),
   };
-  return { prisma, backup };
+  const destination = {
+    push: jest.fn(),
+    remove: jest.fn(),
+  };
+  return { prisma, backup, destination };
 }
 
 type Deps = ReturnType<typeof makeDeps>;
@@ -27,10 +40,11 @@ type Deps = ReturnType<typeof makeDeps>;
 // Test doubles only implement the handful of Prisma/BackupService members
 // BackupsService actually touches — cast once here, at a single well-known
 // boundary, instead of sprinkling `as any` through every test.
-function makeService(deps: Deps): BackupsService {
+function makeService(deps: Partial<Deps> & Pick<Deps, 'prisma' | 'backup'>): BackupsService {
   return new BackupsService(
     deps.prisma as unknown as PrismaService,
     deps.backup as unknown as BackupService,
+    (deps.destination ?? makeDeps().destination) as unknown as SystemBackupDestinationService,
   );
 }
 

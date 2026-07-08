@@ -1,18 +1,72 @@
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { BackupDestinationConfig } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BackupService } from '../system/backup/backup.service';
+import { SystemBackupDestinationService } from '../system/backup-destination/backup-destination.service';
 import { CreateBackupDto } from './dto/create-backup.dto';
 
 @Injectable()
 export class BackupsService {
+  private readonly logger = new Logger(BackupsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly backup: BackupService,
+    private readonly destination: SystemBackupDestinationService,
   ) {}
+
+  // Best-effort: an offsite destination is optional infrastructure, so a
+  // failed/absent push must never fail the backup request that already
+  // succeeded locally (same posture as DomainsService's DNS auto-seed).
+  private async pushOffsite(
+    backupId: string,
+    domainName: string,
+    fileName: string,
+  ): Promise<void> {
+    const config: BackupDestinationConfig | null =
+      await this.prisma.backupDestinationConfig.findFirst();
+    if (!config || !config.enabled) return;
+
+    const localPath = this.backup.filePath(domainName, fileName);
+    try {
+      await this.destination.push(
+        {
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          remotePath: config.remotePath,
+          privateKeyPath: config.privateKeyPath as string,
+        },
+        domainName,
+        localPath,
+        fileName,
+      );
+      await this.prisma.backup.update({
+        where: { id: backupId },
+        data: { offsiteSyncedAt: new Date(), offsiteError: null },
+      });
+      await this.prisma.backupDestinationConfig.update({
+        where: { id: config.id },
+        data: { lastSyncedAt: new Date(), lastError: null },
+      });
+    } catch (err) {
+      const message = (err as Error).message;
+      this.logger.warn(
+        `Offsite push failed for ${domainName}/${fileName}: ${message}`,
+      );
+      await this.prisma.backup
+        .update({ where: { id: backupId }, data: { offsiteError: message } })
+        .catch(() => undefined);
+      await this.prisma.backupDestinationConfig
+        .update({ where: { id: config.id }, data: { lastError: message } })
+        .catch(() => undefined);
+    }
+  }
 
   async create(ownerId: string, isAdmin: boolean, dto: CreateBackupDto) {
     const domain = await this.prisma.domain.findUnique({
@@ -30,7 +84,7 @@ export class BackupsService {
         domain,
         databases,
       );
-      return this.prisma.backup.create({
+      const created = await this.prisma.backup.create({
         data: {
           domainId: domain.id,
           fileName,
@@ -38,6 +92,8 @@ export class BackupsService {
           status: 'COMPLETE',
         },
       });
+      await this.pushOffsite(created.id, domain.name, fileName);
+      return created;
     } catch (err) {
       await this.prisma.backup
         .create({
@@ -117,6 +173,24 @@ export class BackupsService {
       await this.backup
         .remove(backup.domain.name, backup.fileName)
         .catch(() => undefined);
+      if (backup.offsiteSyncedAt) {
+        const config = await this.prisma.backupDestinationConfig.findFirst();
+        if (config) {
+          await this.destination
+            .remove(
+              {
+                host: config.host,
+                port: config.port,
+                username: config.username,
+                remotePath: config.remotePath,
+                privateKeyPath: config.privateKeyPath as string,
+              },
+              backup.domain.name,
+              backup.fileName,
+            )
+            .catch(() => undefined);
+        }
+      }
     }
     await this.prisma.backup.delete({ where: { id } });
     return { success: true };
